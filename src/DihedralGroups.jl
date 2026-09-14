@@ -1,8 +1,53 @@
-# DihedralGroups.jl - Complete Implementation
+"""
+    DihedralGroups
+
+Dihedral groups `D_d` — the symmetries of a regular `d`-gon — as a Julia type,
+together with the group operation, the action on the vertices `0:d-1`, and
+iteration over the whole group.
+
+An element is either a rotation `rᵏ` or a reflection `rᵏ·s`, where `0 ≤ k < d`.
+The group has order `2d` and the presentation
+
+```
+⟨ r, s | rᵈ = s² = id, s·r·s = r⁻¹ ⟩
+```
+
+`d` must be at least 1.
+
+# Quick start
+```jldoctest
+julia> r(4, 1) * s(4)     # a quarter turn, then a reflection
+D4: r^3·s
+
+julia> 2^r(4, 1)          # rotate vertex 2 by one step
+3
+
+julia> collect(dihedralgroup(3))
+6-element Vector{Dihedral{3}}:
+ D3: Id
+ D3: r^1
+ D3: r^2
+ D3: s
+ D3: r^1·s
+ D3: r^2·s
+```
+
+# See also
+- [`Dihedral`](@ref) — the element type.
+- [`r`](@ref) and [`s`](@ref) — the two generators.
+- [`dihedralgroup`](@ref) — the iterator over a whole group.
+"""
 module DihedralGroups
 
 export Dihedral, dhreflect, dhrotation, dihedralgroup, order,
        rotation_angle, isreflect, r, s
+
+# The domain check for `d`, shared by every entry point that builds a group or
+# an element, so the error message cannot drift between them.
+@inline function _check_d(d)
+    d ≥ 1 || throw(ArgumentError("the dihedral group D_d is only defined for d ≥ 1, got d = $d"))
+    return nothing
+end
 
 """
     Dihedral{d} <: Any
@@ -38,14 +83,21 @@ struct Dihedral{d}
     Dihedral{d}(phi, reflect)
 
     Construct a dihedral group element with automatic modulo reduction of rotation index.
+
+    Throws an `ArgumentError` if `d < 1`.
     """
-    Dihedral{d}(phi, reflect) where d = new(mod(phi, d), reflect)
+    function Dihedral{d}(phi, reflect) where d
+        _check_d(d)
+        new{d}(mod(phi, d), reflect)
+    end
 end
 
 """
     Dihedral(d) -> Function
 
 Group element constructor for dihedral group D_d.
+
+Throws an `ArgumentError` if `d < 1`.
 
 # Returns
 - Constructor function `(i, reflect) -> Dihedral{d}(i, reflect)`
@@ -58,7 +110,10 @@ julia> pentagon(2, false)  # 144° rotation
 D5: r^2
 ```
 """
-Dihedral(d) = (i, reflect) -> Dihedral{d}(i, reflect)
+function Dihedral(d)
+    _check_d(d)
+    return (i, reflect) -> Dihedral{d}(i, reflect)
+end
 
 """
     dhrotation(d::Int, i::Int) -> Dihedral{d}
@@ -66,7 +121,7 @@ Dihedral(d) = (i, reflect) -> Dihedral{d}(i, reflect)
 Construct pure rotation element.
 
 # Arguments
-- `d`: Polygon side count (≥3)
+- `d`: Rotational symmetry order (`d ≥ 1`)
 - `i`: Rotation steps (counterclockwise)
 
 # Mathematical Form
@@ -132,7 +187,66 @@ true
 """
 isreflect(g::Dihedral) = g.reflect
 
+"""
+    r(d, phi = 1) -> Dihedral{d}
+
+The rotation generator of `D_d`, and the constructor for any rotation element.
+
+`r(d)` is the generator `r` itself: a single counterclockwise step of `360°/d`.
+`r(d, phi)` is `rᵖʰⁱ`, a rotation by `phi` steps, reduced modulo `d`.
+
+# Examples
+```jldoctest
+julia> r(4)
+D4: r^1
+
+julia> r(4, 3)      # three steps, i.e. 270°
+D4: r^3
+
+julia> r(4, 5)      # reduced modulo d
+D4: r^1
+
+julia> r(4, 1)^2
+D4: r^2
+```
+
+# See also
+- [`s`](@ref) — the reflection generator.
+- [`dhrotation`](@ref) — the equivalent constructor.
+"""
 r(d, phi = 1) = Dihedral{d}(phi, false)
+
+"""
+    s(d, phi = 0) -> Dihedral{d}
+
+The reflection generator of `D_d`, and the constructor for any reflection
+element.
+
+`s(d)` is the reflection `s` itself: it fixes vertex `0` and sends vertex `i` to
+`d - i`. `s(d, phi)` is `rᵖʰⁱ·s`, that same reflection precomposed with a rotation
+by `phi` steps.
+
+Every reflection is its own inverse, so `s(d, phi)^2 == one(Dihedral{d})`.
+
+# Examples
+```jldoctest
+julia> s(4)
+D4: s
+
+julia> s(4, 1)
+D4: r^1·s
+
+julia> s(4, 1)^2
+D4: Id
+
+julia> 0^s(5)       # s fixes vertex 0
+0
+```
+
+# See also
+- [`r`](@ref) — the rotation generator.
+- [`dhreflect`](@ref) — the equivalent constructor.
+"""
 s(d, phi = 0) = Dihedral{d}(phi, true)
 
 """
@@ -140,29 +254,34 @@ s(d, phi = 0) = Dihedral{d}(phi, true)
 
 Group multiplication operation.
 
+`g * h` applies `g` first and then `h`. Written out on the vertices, that makes
+the action a left action:
+
+```math
+(i^g)^h = i^{g * h}
+```
+
 # Composition Rules
 rᵃ * rᵇ = rᵃ⁺ᵇ
-rᵃ * (rᵇ s) = rᵃ⁺ᵇ s
-(rᵃ s) * rᵇ = rᵃ⁻ᵇ s
-(rᵃ s) * (rᵇ s) = rᵃ⁻ᵇ
+rᵃ * (rᵇ s) = rᵇ⁻ᵃ s
+(rᵃ s) * rᵇ = rᵃ⁺ᵇ s
+(rᵃ s) * (rᵇ s) = rᵇ⁻ᵃ
 
 # Examples
 ```jldoctest
-julia> r(4) * s(4)  # Rotation then reflection
-D4: r^1·s
-
-julia> s(4) * r(4)  # Reflection then rotation
+julia> r(4) * s(4)  # A quarter turn, then a reflection
 D4: r^3·s
+
+julia> s(4) * r(4)  # A reflection, then a quarter turn
+D4: r^1·s
 ```
 """
 function Base.:*(g::Dihedral{d}, h::Dihedral{d}) where {d}
-    new_phi = rotation_angle(g) + rotation_angle(h)
-    new_reflect = h.reflect
-    if isreflect(g)
-       new_phi = rotation_angle(g) - rotation_angle(h)
-       new_reflect = !h.reflect
-    end
-    return Dihedral{d}(new_phi, new_reflect)
+    a = rotation_angle(g)
+    b = rotation_angle(h)
+    # `g * h` applies `g` first and then `h`, so the action below is a left
+    # action: (i^g)^h == i^(g * h).
+    return Dihedral{d}(isreflect(h) ? b - a : a + b, isreflect(g) ⊻ isreflect(h))
 end
 
 """
@@ -224,6 +343,8 @@ Group action on polygon vertices.
 # Action Rules
 Pure rotation: i ↦ (i + k) mod d
 Reflection: i ↦ (d - i + k) mod d
+
+This is a left action: `(i^g)^h == i^(g * h)`.
 
 # Arguments
 - `i`: Vertex index (0 to d-1)
@@ -352,15 +473,18 @@ Base.broadcastable(g::Dihedral) = Ref(g)
 """
     DihedralGroup{d}
 
-Iterator over all elements of dihedral group D_d.
+The iterator type over all `2d` elements of the dihedral group `D_d`, as returned
+by [`dihedralgroup`](@ref).
 
-# Element Order
+`DihedralGroup` is not exported; construct one with `dihedralgroup(d)`.
+
+# Element order
 1. Rotations: r⁰, r¹, ..., rᵈ⁻¹
 2. Reflections: r⁰s, r¹s, ..., rᵈ⁻¹s
 
 # Examples
 ```jldoctest
-julia> collect(DihedralGroup{3})
+julia> collect(dihedralgroup(3))
 6-element Vector{Dihedral{3}}:
  D3: Id
  D3: r^1
@@ -368,29 +492,47 @@ julia> collect(DihedralGroup{3})
  D3: s
  D3: r^1·s
  D3: r^2·s
+
+julia> length(dihedralgroup(3))
+6
 ```
+
+# See also
+- [`dihedralgroup`](@ref) — the constructor for this type.
 """
 struct DihedralGroup{d} end
 
 """
     dihedralgroup(d) -> DihedralGroup{d}
 
-Construct group iterator for d ≥ 3.
+Construct the iterator over all `2d` elements of `D_d` (`d ≥ 1`).
+
+The rotations `r⁰ … rᵈ⁻¹` come first, then the reflections `r⁰s … rᵈ⁻¹s`.
+
+Throws an `ArgumentError` if `d < 1`.
 
 # Examples
 ```jldoctest
-julia> for g in dihedralgroup(3)
-           println(g)
-       end
-D3: Id
-D3: r^1
-D3: r^2
-D3: s
-D3: r^1·s
-D3: r^2·s
+julia> collect(dihedralgroup(3))
+6-element Vector{Dihedral{3}}:
+ D3: Id
+ D3: r^1
+ D3: r^2
+ D3: s
+ D3: r^1·s
+ D3: r^2·s
+
+julia> length(dihedralgroup(5))
+10
 ```
+
+# See also
+- [`DihedralGroup`](@ref) — the iterator type this returns.
 """
-dihedralgroup(d) = DihedralGroup{d}()
+function dihedralgroup(d)
+    _check_d(d)
+    return DihedralGroup{d}()
+end
 
 # Iterator implementation
 Base.eltype(_::DihedralGroup{d}) where d = Dihedral{d}
@@ -399,10 +541,8 @@ Base.length(_::DihedralGroup{d}) where d = 2*d
 Base.iterate(D::DihedralGroup) = (one(eltype(D)), 1)
 function Base.iterate(_::DihedralGroup{d}, status) where d
     (status > 2*d-1) && return nothing
-    out = r(d, status)
-    if status > d-1
-        out *= s(d)
-    end
+    # Rotations r⁰ … rᵈ⁻¹ first, then reflections r⁰s … rᵈ⁻¹s.
+    out = status > d-1 ? s(d) * r(d, status - d) : r(d, status)
     return out, status + 1
 end
 

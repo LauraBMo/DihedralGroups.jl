@@ -12,8 +12,10 @@ makedocs(;
         edit_link="main",
         assets=String[],
     ),
+    checkdocs=:exports,
     pages=[
         "Home" => "index.md",
+        "API" => "api.md",
     ],
 )
 

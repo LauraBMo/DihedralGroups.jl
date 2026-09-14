@@ -23,8 +23,8 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.11'
-          - '1.6'
+          - '1.10'
+          - '1.12'
           - 'pre'
         os:
           - ubuntu-latest
@@ -65,10 +65,8 @@ jobs:
           Pkg.develop(PackageSpec(path=pwd()))
           Pkg.instantiate()
       - uses: julia-actions/julia-buildpkg@v1
-      - uses: julia-actions/julia-docdeploy@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+      # Doctests run BEFORE the deploy, so a failing docstring cannot leave a
+      # freshly deployed manual behind.
       - name: Run doctests
         shell: julia --project=docs --color=yes {0}
         run: |
@@ -76,3 +74,7 @@ jobs:
           using DihedralGroups
           DocMeta.setdocmeta!(DihedralGroups, :DocTestSetup, :(using DihedralGroups); recursive=true)
           doctest(DihedralGroups)
+      - uses: julia-actions/julia-docdeploy@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}

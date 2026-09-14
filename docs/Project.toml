@@ -1,3 +1,9 @@
 [deps]
 DihedralGroups = "389a4bbc-39bf-4ad8-8e5b-dcae9cd81e5a"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+
+[sources]
+DihedralGroups = {path = ".."}
+
+[compat]
+Documenter = "1"
